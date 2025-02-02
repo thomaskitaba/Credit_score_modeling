@@ -1,0 +1,23 @@
+#!/usr/bin/python3
+print("Thomas Kitaba")
+import pandas as pd
+
+# Check for Missing Values
+print("===================================")
+df = pd.read_csv('cs-test.csv')  # Load your Excel file
+# df = pd.read_excel('cs-training.xlsx')
+print(f"count of Missing values in each column {df.isnull().sum()}")
+
+# Check for Duplicate rows
+print("===================================")
+Duplicate = df[df.duplicated()]
+if not Duplicate.empty:
+    print(f"Duplicate rows: {Duplicate}")
+else:
+    print("No Duplicate files found")
+# Check Datatypes ( datatype of each column)
+print("===================================")
+Datatypes = df.dtypes
+print(f"Datatypes of each column:- {Datatypes}")
+
+
