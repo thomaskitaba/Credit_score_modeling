@@ -10,7 +10,8 @@ print(f"count of Missing values in each column {df.isnull().sum()}")
 
 # Check for Duplicate rows
 print("===================================")
-Duplicate = df[df.duplicated()]
+# find duplicate rows
+Duplicate = df[df.duplicated()] #df [..] Filters df with only True values
 if not Duplicate.empty:
     print(f"Duplicate rows: {Duplicate}")
 else:
