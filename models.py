@@ -1,122 +1,176 @@
 #!/usr/bin/python3
 
-
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import (accuracy_score, precision_score, 
+                             recall_score, f1_score, roc_auc_score,
+                             confusion_matrix)
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from imblearn.over_sampling import SMOTE
+from collections import Counter
 
-#todo: General step  
-# import test and training data and test data
-# preprocess it
-# 
-#
-#
-#   
-def model_evaluation(model, X_test, Y_test, model_name):
-    return correct
+def preprocess_data(df, imputer=None, fit_imputer=False):
+    """Handle missing values and outliers"""
+    df = df.copy()
+    
+    # Clean column names
+    df.columns = [col.strip() for col in df.columns]
+    
+    # Handle missing values and zeros
+    df['MonthlyIncome'] = df['MonthlyIncome'].replace(0, np.nan)
+    df['NumberOfDependents'] = df['NumberOfDependents'].replace(0, np.nan)
+    
+    # Handle unrealistic values in past due columns
+    past_due_cols = [
+        'NumberOfTime30-59DaysPastDueNotWorse',
+        'NumberOfTimes90DaysLate',
+        'NumberOfTime60-89DaysPastDueNotWorse'
+    ]
+    
+    for col in past_due_cols:
+        df[col] = np.where(df[col] > 20, np.nan, df[col])
+    
+    # Impute missing values
+    if imputer is None:
+        imputer = SimpleImputer(strategy='median')
+        
+    if fit_imputer:
+        df_imputed = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
+    else:
+        df_imputed = pd.DataFrame(imputer.transform(df), columns=df.columns)
+    
+    return df_imputed, imputer
 
-def linear_regression(X_train, y_train, X_test, y_test):
-    """
-    train and test dataset using linear regression learning model
-    """
-    result = ["80%", {"F1-score": "98%", "Precision": "95%" , "Recall": "90%"}]
+def evaluate_model(model, X_test, y_test, model_name):
+    """Comprehensive model evaluation"""
+    metrics = {}
     
-    # Chose Model
-    model = LogisticRegression(max_iter=500)
+    # Predictions
+    y_pred = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:, 1]
     
-    # Start Training
+    # Calculate metrics
+    metrics['accuracy'] = accuracy_score(y_test, y_pred)
+    metrics['precision'] = precision_score(y_test, y_pred)
+    metrics['recall'] = recall_score(y_test, y_pred)
+    metrics['f1'] = f1_score(y_test, y_pred)
+    metrics['roc_auc'] = roc_auc_score(y_test, y_proba)
+    
+    # Confusion matrix
+    tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+    metrics['confusion_matrix'] = {
+        'true_negative': tn,
+        'false_positive': fp,
+        'false_negative': fn,
+        'true_positive': tp
+    }
+    
+    return {
+        'model_name': model_name,
+        'metrics': metrics,
+        'feature_importance': get_feature_importance(model, X_test.columns) 
+        if hasattr(model, 'feature_importances_') else None
+    }
+
+def get_feature_importance(model, feature_names):
+    """Get feature importance for tree-based models"""
+    if hasattr(model, 'feature_importances_'):
+        return dict(zip(feature_names, model.feature_importances_))
+    return None
+
+def train_logistic_regression(X_train, y_train):
+    """Logistic Regression with handling for class imbalance"""
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('classifier', LogisticRegression(
+            class_weight='balanced',
+            max_iter=2000,
+            random_state=42,
+            solver='lbfgs'
+        ))
+    ])
+    pipeline.fit(X_train, y_train)
+    return pipeline
+
+def train_random_forest(X_train, y_train):
+    """Random Forest with balanced class weights"""
+    model = RandomForestClassifier(
+        n_estimators=200,
+        class_weight='balanced',
+        random_state=42,
+        n_jobs=-1
+    )
     model.fit(X_train, y_train)
-    # Start Testing
-    test_prediction = model.predict(X_test)
-    
-    # Evaluate the model
-    prediction_result = accuracy_score(y_test, test_prediction)
-    result[0] = f"{int(prediction_result * 100)}%"
-    result.append([model, "linear regression"])
-    print(result[0])
-    return result
+    return model
 
+def train_xgboost(X_train, y_train):
+    """XGBoost with handling for class imbalance"""
+    scale_pos_weight = np.sum(y_train == 0) / np.sum(y_train == 1)
+    model = XGBClassifier(
+        scale_pos_weight=scale_pos_weight,
+        eval_metric='logloss',
+        use_label_encoder=False,
+        random_state=42
+    )
+    model.fit(X_train, y_train)
+    return model
 
-def random_forest(X_train, y_train, X_test, y_test):
-    result = ["99%", {"F1-score": "98%", "Precision": "95%" , "Recall": "90%"}]
+def prepare_submission(model, test_df, imputer, feature_columns, output_file):
+    """Generate submission file in required format"""
+    # Preprocess test data
+    X_test, _ = preprocess_data(test_df, imputer=imputer, fit_imputer=False)
     
-    # Chose Model
-    rf_model = RandomForestClassifier(n_estimators=100, random_state=42) #n_estiators = number of trees, randome_state = for reprocuction
+    # Ensure correct feature order
+    X_test = X_test[feature_columns]
     
-    # Start Training
-    rf_model.fit(X_train, y_train)
+    # Predict probabilities
+    probabilities = model.predict_proba(X_test)[:, 1]
     
-    # Start Testing
-    rf_prediction = rf_model.predict(X_test)
-    # Evaluate the model
-    rf_prediction_result = accuracy_score(y_test, rf_prediction)
+    # Create submission dataframe
+    submission = pd.DataFrame({
+        'Id': test_df['Unnamed: 0'],
+        'Probability': probabilities
+    })
     
-    if rf_prediction_result:
-        result[0] = f"{int(rf_prediction_result*100)}%"
-    print(f"rf: {result[0]}")
-    result.append([rf_model, "Random Forest"])
-    return result
-
-def gradient_boost(X_train, y_train, X_test, y_test):
-    result = ["99%", {"F1-score": "98%", "Precision": "95%" , "Recall": "90%"}]
-    
-    # Chose Model
-    gb_model = XGBClassifier(eval_metric="logloss") #
-    
-    # Start Training
-    gb_model.fit(X_train, y_train)
-    # Start Testing
-    gb_prediction = gb_model.predict(X_test)
-    # Evaluate the model
-    gb_prediction_result = accuracy_score(y_test, gb_prediction)
-    # print(gb_prediction_result)
-    
-    result[0] = f"{int(gb_prediction_result * 100)}%"
-    result.append([gb_model, "Gradient Boost", X_train, y_train])
-    print(result[0])
-    return result
-
+    submission.to_csv(output_file, index=False)
+    print(f"Submission file saved to {output_file}")
 
 if __name__ == "__main__":
-    print("Thomas kitaba")
-    # import csv files for traingn and testing
-   
-    np.random.seed(42)
-    X = np.random.rand(100, 2)
-    y = (X[:, 0] + X[:, 1] > 1).astype(int)  # Simple threshold-based binary classification
-    
-    # Train/test split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    
-    
-    
-    model_accuracy = {"linear regression": 0, "Random Forest": 0, "Gradient Boost": 0}
-    
+    # ... [previous code] ...
 
+    evaluation_results = {}
     
-    model_accuracy["linear regression"] = [(int(linear_regression(X_train, y_train, X_test, y_test)[0][:-1])), linear_regression(X_train, y_train, X_test, y_test)[1]]
-    model_accuracy["Random Forest"] = [(int(random_forest(X_train, y_train, X_test, y_test)[0][:-1])), random_forest(X_train, y_train, X_test, y_test)[1]]
-    model_accuracy["Gradient Boost"] = [(int(gradient_boost(X_train, y_train, X_test, y_test)[0][:-1])), gradient_boost(X_train, y_train, X_test, y_test)[1]]
+    for name, trainer in models.items():
+        print(f"\nTraining {name}...")
+        model = trainer(X_res, y_res)
+        evaluation = evaluate_model(model, X_val, y_val, name)
+        evaluation_results[name] = {
+            'model': model,
+            'metrics': evaluation['metrics'],
+            'model_name': name
+        }
+        print(f"{name} Validation ROC-AUC: {evaluation['metrics']['roc_auc']:.4f}")
     
-
-    max_key = ""
-    max_value = float('-inf')
-    all_max = set()
-    for key, value in model_accuracy.items():
-                
-        if max_value < value[0]:
-            max_value = value[0]
-            max_key = key
-            max_eval = value[1]
-
-        
-        
-    print(f"model with high accuracy : {max_key}")
-    print(f"Accuracy value: {max_value}")
-    print(f"evaluation matric scores: {max_eval}")
+    # Select best model based on ROC-AUC
+    best_model_name = max(evaluation_results, 
+                         key=lambda x: evaluation_results[x]['metrics']['roc_auc'])
+    best_model_info = evaluation_results[best_model_name]
+    best_model = best_model_info['model']
     
+    print(f"\nBest model: {best_model_info['model_name']}")
+    
+    # Prepare final submission
+    feature_columns = X_train_clean.columns.tolist()
+    prepare_submission(
+        best_model,
+        test_df,
+        imputer,
+        feature_columns,
+        'final_submission.csv'
+    )

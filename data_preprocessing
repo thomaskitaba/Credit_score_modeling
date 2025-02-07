@@ -4,7 +4,7 @@ import pandas as pd
 
 # Check for Missing Values
 print("===================================")
-df = pd.read_csv('cs-test.csv')  # Load your Excel file
+df = pd.read_csv('./cs-training.csv')  # Load your Excel file
 # df = pd.read_excel('cs-training.xlsx')
 print(f"count of Missing values in each column {df.isnull().sum()}")
 
@@ -20,5 +20,11 @@ else:
 print("===================================")
 Datatypes = df.dtypes
 print(f"Datatypes of each column:- {Datatypes}")
+
+# Check for Outliers in each column
+print("===================================")
+# Check for Outliers in each column
+
+
 
 
