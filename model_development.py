@@ -31,8 +31,19 @@ def shap_xai(model_evaluation_list):
         
     # Compute contriution of each feature to the models prediction
     shap_values = explainer.shap_values(X_test)
-    feature_names = [f'Feature_{i}' for i in range(X_test.shape[1])]
-    
+    # feature_names = [f'Feature_{i}' for i in range(X_test.shape[1])]
+    feature_names = [
+    "RevUtil",      # RevolvingUtilizationOfUnsecuredLines
+    "Age",          # age
+    "PastDue30_59", # NumberOfTime30-59DaysPastDueNotWorse
+    "DebtRatio",    # DebtRatio
+    "Income",       # MonthlyIncome
+    "OpenCredits",  # NumberOfOpenCreditLinesAndLoans
+    "Late90",       # NumberOfTimes90DaysLate
+    "RELoans",      # NumberRealEstateLoansOrLines
+    "PastDue60_89", # NumberOfTime60-89DaysPastDueNotWorse
+    "Dependents"    # NumberOfDependents
+]
     
     # X_train = pd.DataFrame(X_train, columns=feature_names)
     X_test = pd.DataFrame(X_test, columns=feature_names)
@@ -63,8 +74,6 @@ def lime_xai(model_evaluation_list):
 ]
 
     # Example usage:
-  
-
     # Explain a single prediction (e.g., the first instance)
     # todo: the LimeTabularExplainer expects the training data to be a numpy array, not a pandas DataFrame.
     instance =  np.array(X_test)[0]# Select the first instance in the dataset
@@ -74,14 +83,20 @@ def lime_xai(model_evaluation_list):
     exp = explainer.explain_instance(
     instance,  # The instance to explain
     model.predict_proba,  # Use the model's probability predictions
-    num_features=len(feature_names)  # Include all features in the explanation
+    num_features=5  # Include all features in the explanation
 )
     # explanation.show_in_notebook()
     predicted_class = np.argmax(exp.predict_proba)  # Get class with highest probability
     # Print Explanation as Text
     
     print("-------------------LIME----------------------------------")
-    print("\nLIME text explanation for the instance prediction:")
+    if model_name == "Linear Regression":
+        print("\nLIME text explanation for Linear Regression")
+    if model_name == "Random Forest":
+        print("\nLIME text explanation for Random Forest")
+    if model_name == "Gradient Boost":
+        print("\nLIME text explanation forGradient Boost")
+   
     print("Predicted class:", predicted_class)
     print("Predicted probabilities:", exp.predict_proba)
     
@@ -93,7 +108,8 @@ def lime_xai(model_evaluation_list):
         print(f"{feature_names[count]}. : {weight:.2f}")
     exp.as_pyplot_figure()
     
-    # plt.show()
+    plt.show()
+
     # # To have more control over the visuslization use this Create a Matplotlib visualization
     # explanation_data = exp.as_list()  # Get explanation as a list of (feature, weight) tuples
     # plt.figure(figsize=(10, 6))  # Set figure size
@@ -109,10 +125,45 @@ def lime_xai(model_evaluation_list):
     # plt.tight_layout()
     # plt.show()
 
+
 def dice_xai(model_evaluation_list):
     model, X_test, y_test, model_name = model_evaluation_list   
-    return "Thomas Kitaba"
+    feature_names = [
+    "RevUtil",      # RevolvingUtilizationOfUnsecuredLines
+    "Age",          # age
+    "PastDue30_59", # NumberOfTime30-59DaysPastDueNotWorse
+    "DebtRatio",    # DebtRatio
+    "Income",       # MonthlyIncome
+    "OpenCredits",  # NumberOfOpenCreditLinesAndLoans
+    "Late90",       # NumberOfTimes90DaysLate
+    "RELoans",      # NumberRealEstateLoansOrLines
+    "PastDue60_89", # NumberOfTime60-89DaysPastDueNotWorse
+    "Dependents"    # NumberOfDependents
+]
+    
+    # prepare data
+    X_test_df = pd.DataFrame(X_test, columns=feature_names)
+    X_test_df['target'] = y_test
 
+    # Create the DiCE Data object using the proper parameter name "dataframe"
+    d = dice_ml.Data(
+        dataframe=X_test_df,
+        continuous_features=feature_names,
+        outcome_name='target'
+    )
+    m = dice_ml.Model(model=model, backend='sklearn')
+    
+    # create explainer
+    exp = dice_ml.Dice(d, m)
+    
+    # select the fires instance
+    instance = X_test_df.iloc[[1]]
+    
+    # generate explanation
+    generated_explanation = exp.generate_counterfactuals(instance, total_CFs=4, desired_class=1)
+    
+    generate_counterfactuals.visualize_as_dataframe()
+    
 def model_evaluation(model_evaluation_list):
     model, X_test, y_test, model_name = model_evaluation_list
     result = {}
@@ -177,13 +228,12 @@ def gradient_boost(X_train, y_train):
 if __name__ == "__main__":
     print("Thomas kitaba")
    
+    # Sample Data for test
     # np.random.seed(42)
     # X, y = make_classification(n_samples=1000, n_features=20, n_informative=10,
     #                        n_redundant=5, n_clusters_per_class=2, random_state=42)
     # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    
-    # from sklearn.model_selection import train_test_split
+
     # --- Use CSV Data Only ---
     df = pd.read_csv('cs-training.csv')
 
@@ -211,14 +261,13 @@ if __name__ == "__main__":
     # Train model using Gradient boost
     model_evaluation_list.append([gradient_boost(X_train, y_train), X_test, y_test, "Gradient Boost"])
     
-    # all_models = []
     for model in model_evaluation_list:
         model_evaluation_results = model_evaluation(model)
-        # all_models.append(model_evaluation_results)
-        print("-------------------Evaluation Matric----------------------------------")
-        print(model_evaluation_results)
+        # print("-------------------Evaluation Matric----------------------------------")
+        # print(model_evaluation_results)
         # shap_xai(model)
-        lime_xai(model)
+        # lime_xai(model)
+        dice_xai(model)
         print("===========================================")
         
     
