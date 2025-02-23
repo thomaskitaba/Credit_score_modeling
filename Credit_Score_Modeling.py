@@ -7,7 +7,7 @@ from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
-
+from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
 import lime.lime_tabular, shap, dice_ml 
@@ -44,6 +44,8 @@ def shap_xai(model_evaluation_list):
     "PastDue60_89", # NumberOfTime60-89DaysPastDueNotWorse
     "Dependents"    # NumberOfDependents
 ]
+    df_original = pd.read_csv('cs-training.csv')
+    feature_names = df_original.columns[:-1].tolist()
     
     # X_train = pd.DataFrame(X_train, columns=feature_names)
     X_test = pd.DataFrame(X_test, columns=feature_names)
@@ -51,62 +53,65 @@ def shap_xai(model_evaluation_list):
     shap.summary_plot(shap_values, X_test, feature_names=X_test.columns)
     
 def lime_xai(model_evaluation_list):
-    model, X_test, y_test, model_name = model_evaluation_list
-    explainer = lime.lime_tabular.LimeTabularExplainer(
-        training_data=X_test, mode="classification"
-    )
-    
-    # convert
-    # explanation = explainer.explain_instance(X_test[0], model.predict_proba)
-    
-    # feature_names = [f'Feature_{i}' for i in range(X_test.shape[1])]
-    feature_names = [
-    "RevUtil",      # RevolvingUtilizationOfUnsecuredLines
-    "Age",          # age
-    "PastDue30_59", # NumberOfTime30-59DaysPastDueNotWorse
-    "DebtRatio",    # DebtRatio
-    "Income",       # MonthlyIncome
-    "OpenCredits",  # NumberOfOpenCreditLinesAndLoans
-    "Late90",       # NumberOfTimes90DaysLate
-    "RELoans",      # NumberRealEstateLoansOrLines
-    "PastDue60_89", # NumberOfTime60-89DaysPastDueNotWorse
-    "Dependents"    # NumberOfDependents
-]
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import lime.lime_tabular
 
-    # Example usage:
-    # Explain a single prediction (e.g., the first instance)
-    # todo: the LimeTabularExplainer expects the training data to be a numpy array, not a pandas DataFrame.
-    instance =  np.array(X_test)[0]# Select the first instance in the dataset
-    
+    # Unpack the model and test data.
+    model, X_test, y_test, model_name = model_evaluation_list
+
+    # Load feature names from the original dataset.
+    df_original = pd.read_csv('cs-training.csv')
+    feature_names = df_original.columns[:-1].tolist()  # Exclude the target column
+
+    # Convert test data to NumPy array (LIME requires it)
+    X_test = np.array(X_test)
+
+    # Initialize the LIME explainer.
+    explainer = lime.lime_tabular.LimeTabularExplainer(
+        training_data=X_test, 
+        feature_names=feature_names,  # Use actual feature names
+        mode="classification"
+    )
+
+    # Select the first instance from X_test.
+    instance = X_test[0]
+
     print("**********************************************")
-    
+
+    # Generate the LIME explanation for the selected instance.
     exp = explainer.explain_instance(
-    instance,  # The instance to explain
-    model.predict_proba,  # Use the model's probability predictions
-    num_features=5  # Include all features in the explanation
-)
-    # explanation.show_in_notebook()
-    predicted_class = np.argmax(exp.predict_proba)  # Get class with highest probability
-    # Print Explanation as Text
-    
+        instance,            # Instance to explain.
+        model.predict_proba, # Function to get model's probability predictions.
+        num_features=len(feature_names)       # Number of features to display in the explanation.
+    )
+
+    # Get the predicted class from the explanation.
+    predicted_class = np.argmax(exp.predict_proba)
+
+    # Print explanation details.
     print("-------------------LIME----------------------------------")
-    if model_name == "Linear Regression":
-        print("\nLIME text explanation for Linear Regression")
-    if model_name == "Random Forest":
-        print("\nLIME text explanation for Random Forest")
-    if model_name == "Gradient Boost":
-        print("\nLIME text explanation forGradient Boost")
-   
+    print(f"\nLIME text explanation for {model_name}")
     print("Predicted class:", predicted_class)
     print("Predicted probabilities:", exp.predict_proba)
-    
-    # Print Feature Contributions
+
     print("\nFeature contributions (feature importance):")
-    # for feature, weight in exp.as_list():
-    #     print(f"{feature}: {weight:.4f}")
-    for count, (feature, weight) in enumerate(exp.as_list()):
-        print(f"{feature_names[count]}. : {weight:.2f}")
-    exp.as_pyplot_figure()
+    for feature, weight in exp.as_list():
+        print(f"{feature}: {weight:.2f}")
+
+    # --- Modify the Plot to Display Feature Names on the y-axis ---
+    fig = exp.as_pyplot_figure()
+    ax = fig.gca()
+    plt.subplots_adjust(left=0.35)
+
+    # Get explanation feature names from LIME
+    explanation_list = exp.as_list()
+    feature_labels = [item[0] for item in explanation_list]  # Get feature labels
+    
+    # Set y-axis labels correctly
+    ax.set_yticks(range(len(feature_labels)))
+    ax.set_yticklabels(feature_labels)
     
     plt.show()
 
@@ -125,45 +130,87 @@ def lime_xai(model_evaluation_list):
     # plt.tight_layout()
     # plt.show()
 
-
 def dice_xai(model_evaluation_list):
+    # Unpack the model and test data.
     model, X_test, y_test, model_name = model_evaluation_list   
-    feature_names = [
-    "RevUtil",      # RevolvingUtilizationOfUnsecuredLines
-    "Age",          # age
-    "PastDue30_59", # NumberOfTime30-59DaysPastDueNotWorse
-    "DebtRatio",    # DebtRatio
-    "Income",       # MonthlyIncome
-    "OpenCredits",  # NumberOfOpenCreditLinesAndLoans
-    "Late90",       # NumberOfTimes90DaysLate
-    "RELoans",      # NumberRealEstateLoansOrLines
-    "PastDue60_89", # NumberOfTime60-89DaysPastDueNotWorse
-    "Dependents"    # NumberOfDependents
-]
     
-    # prepare data
+    import pandas as pd
+    from sklearn.impute import SimpleImputer
+    import dice_ml
+    
+    # --- Automatically Retrieve Feature Names from CSV ---
+    # Read the CSV to get the original column names.
+    df_original = pd.read_csv('cs-training.csv')
+    # Assume that all columns except the last one are features.
+    feature_names = df_original.columns[:-1].tolist()
+    # The target column is assumed to be the last column.
+    target_name = df_original.columns[-1]
+    
+    # --- Prepare the DataFrame ---
+    # Create a DataFrame from X_test using the automatically retrieved feature names.
     X_test_df = pd.DataFrame(X_test, columns=feature_names)
-    X_test_df['target'] = y_test
-
-    # Create the DiCE Data object using the proper parameter name "dataframe"
-    d = dice_ml.Data(
-        dataframe=X_test_df,
-        continuous_features=feature_names,
-        outcome_name='target'
-    )
-    m = dice_ml.Model(model=model, backend='sklearn')
+    # Add the target column using y_test.
+    X_test_df[target_name] = y_test
     
-    # create explainer
+    # Print missing values before cleaning.
+    print("Missing values in dataset:\n", X_test_df.isnull().sum())
+    
+    # Drop rows where the target is missing.
+    X_test_df = X_test_df.dropna(subset=[target_name])
+    
+    # Impute missing feature values using the mean strategy.
+    imputer = SimpleImputer(strategy="mean")
+    X_test_df[feature_names] = imputer.fit_transform(X_test_df[feature_names])
+    
+    # Verify that there are no missing values after cleaning.
+    print("Missing values in dataset after cleaning:\n", X_test_df.isnull().sum())
+    
+    # --- Create the DiCE Data and Model Objects ---
+    # Create the DiCE data object. DiCE needs the full dataset (features and outcome)
+    # to learn feature ranges.
+    d = dice_ml.Data(
+         dataframe=X_test_df,
+         continuous_features=feature_names,
+         outcome_name=target_name
+    )
+    
+    # Create the DiCE model object using the provided model and the 'sklearn' backend.
+    m = dice_ml.Model(model=model, backend="sklearn")
+    
+    # Create the DiCE explainer.
     exp = dice_ml.Dice(d, m)
     
-    # select the fires instance
-    instance = X_test_df.iloc[[1]]
+    # --- Select a Query Instance ---
+    # IMPORTANT: DiCE expects the query instance to contain only the features.
+    # Here we select the first instance and drop the target column.
+    instance = X_test_df.iloc[[0]].drop(target_name, axis=1)
     
-    # generate explanation
-    generated_explanation = exp.generate_counterfactuals(instance, total_CFs=4, desired_class=1)
+    print("**********************************************")
+    if model_name == "Linear Regression":
+        print("\nDiCE explanation for Linear Regression")
+    elif model_name == "Random Forest":
+        print("\nDiCE explanation for Random Forest")
+    elif model_name == "Gradient Boost":
+        print("\nDiCE explanation for Gradient Boost")
     
-    generate_counterfactuals.visualize_as_dataframe()
+    # --- Generate Counterfactual Explanations ---
+    try:
+        generated_explanation = exp.generate_counterfactuals(
+            query_instances=instance,  # Note: parameter name is plural!
+            total_CFs=4,               # Generate 4 counterfactuals.
+            desired_class=1,           # Change the prediction to class 1.
+            features_to_vary="all"     # Allow all features to vary.
+        )
+    except Exception as e:
+        print("Error generating counterfactuals:", e)
+        return
     
+    # --- Visualize the Generated Counterfactuals ---
+    try:
+        generated_explanation.visualize_as_dataframe()
+    except Exception as e:
+        print("Error visualizing counterfactuals:", e)
+
 def model_evaluation(model_evaluation_list):
     model, X_test, y_test, model_name = model_evaluation_list
     result = {}
@@ -266,8 +313,8 @@ if __name__ == "__main__":
         # print("-------------------Evaluation Matric----------------------------------")
         # print(model_evaluation_results)
         # shap_xai(model)
-        # lime_xai(model)
-        dice_xai(model)
+        lime_xai(model)
+        # dice_xai(model)
         print("===========================================")
         
     
